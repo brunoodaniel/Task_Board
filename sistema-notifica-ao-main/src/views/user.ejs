@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quadro de Tarefas</title>
+    <link href="/css/user.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/user.js"></script>
+
+</head>
+
+<body>
+    <header>
+        <h1>Quadro de Tarefas</h1>
+    </header>
+
+    <div class="kanban-board">
+        <div class="kanban-column" id="new-column">
+            <h2>📌 Novo</h2>
+            <% tasks.forEach(task=> { %>
+                <div class="task-card">
+                    <%= task %>
+                </div>
+                <% }); %>
+        </div>
+        <div class="kanban-column" id="in-progress-column">
+            <h2>⏳ Em Andamento</h2>
+        </div>
+        <div class="kanban-column" id="done-column">
+            <h2>✅ Concluído</h2>
+        </div>
+    </div>
+</body>
+
+</html>

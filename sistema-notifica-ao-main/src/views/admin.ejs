@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tela Administrativa</title>
+    <link href="/css/admin.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/admin.js"></script>
+
+</head>
+
+<body>
+    <header>
+        <h1>📌 Tela Administrativa</h1>
+    </header>
+
+    <form class="task-form" method="POST" action="/submit-task">
+        <label for="task">Tarefa:</label>
+        <input type="text" id="task" name="task" placeholder="Digite a nova tarefa..." required>
+        <div id="error-message" class="error-message"></div>
+        <button type="submit" class="submit-button">✅ Adicionar Tarefa</button>
+    </form>
+
+    <div class="kanban-board">
+        <div class="kanban-column" id="new-column">
+            <h2>📌 Novo</h2>
+            <% if (typeof tasks !=='undefined' && tasks.length> 0) { %>
+                <% tasks.forEach(task=> { %>
+                    <div class="task-card">
+                        <span class="task-content">
+                            <%= task %>
+                        </span>
+                        <button class="delete-btn" onclick="deleteTask('<%= task %>')">×</button>
+                    </div>
+                    <% }); %>
+                        <% } %>
+        </div>
+        <div class="kanban-column" id="in-progress-column">
+            <h2>⏳ Em Andamento</h2>
+        </div>
+        <div class="kanban-column" id="done-column">
+            <h2>✅ Concluído</h2>
+        </div>
+    </div>
+</body>
+
+</html>
