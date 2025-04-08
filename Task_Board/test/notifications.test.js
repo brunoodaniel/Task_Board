@@ -6,7 +6,7 @@ let testServer;
 let clientSocket;
 
 describe('Testes de Notificações Socket.IO', function () {
-  this.timeout(10000); // Tempo maior para testes assíncronos
+  this.timeout(10000); 
 
   before((done) => {
     testServer = server.listen(0, () => {
@@ -23,7 +23,7 @@ describe('Testes de Notificações Socket.IO', function () {
       });
 
       clientSocket.on('connect_error', (err) => {
-        done(err); // falha o teste se não conectar
+        done(err); 
       });
     });
   });
@@ -36,7 +36,7 @@ describe('Testes de Notificações Socket.IO', function () {
   });
 
   beforeEach((done) => {
-    db.run('DELETE FROM tasks', done); // limpa o banco antes de cada teste
+    db.run('DELETE FROM tasks', done); 
   });
 
   it('deve emitir "new-task" ao adicionar nova tarefa', (done) => {
@@ -52,20 +52,18 @@ describe('Testes de Notificações Socket.IO', function () {
       }
     });
 
-    // envia a tarefa via POST
     const axios = require('axios');
     const port = testServer.address().port;
     axios.post(`http://localhost:${port}/submit-task`, `task=${encodeURIComponent(taskContent)}`, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-    }).catch(done); // chama done com erro caso falhe
+    }).catch(done); 
   });
 
   it('deve emitir "duplicate-task" ao tentar adicionar tarefa repetida', (done) => {
     const taskContent = 'Tarefa Duplicada';
 
-    // insere tarefa no banco manualmente
     db.run('INSERT INTO tasks (content) VALUES (?)', [taskContent], (err) => {
       if (err) return done(err);
 
