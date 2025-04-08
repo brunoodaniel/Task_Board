@@ -208,6 +208,14 @@ io.on('connection', async (socket) => {
     });
 });
 
-server.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
-});
+if (require.main === module) {
+    server.listen(port, () => {
+        console.log(`Servidor rodando em http://localhost:${port}`);
+    });
+}
+
+module.exports = {
+    app,
+    db, 
+    server 
+};
