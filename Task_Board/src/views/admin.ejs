@@ -14,7 +14,7 @@
     </header>
 
     <form class="task-form" method="POST" action="/submit-task">
-        <label for="task">Tarefa:</label>
+        <label for="task">Nova Tarefa:</label>
         <input type="text" id="task" name="task" placeholder="Digite a nova tarefa..." required>
         <div id="error-message" class="error-message"></div>
         <button type="submit" class="submit-button">✅ Adicionar Tarefa</button>
@@ -22,116 +22,66 @@
 
     <div id="notification" class="notification-hidden"></div>
 
-    <div class="status-board">
-        <div class="status-column">
-            <h2>📌 Novo</h2>
-            <div class="tasks-container">
-                <% tasks.filter(t => t.status === 'novo').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>" data-status="novo">
-                        <span class="task-content"><%= task.content %></span>
-                        <div class="task-status"><%= task.status %></div>
-                        <form action="/delete-task" method="POST" class="delete-form">
-                            <input type="hidden" name="task" value="<%= task.content %>">
-                            <button type="submit" class="delete-btn">×</button>
-                        </form>
-                    </div>
-                <% }); %>
-            </div>
+    <div class="task-list-container">
+        <h2 class="list-title">Todas as Tarefas</h2>
+        <div class="task-list-header">
+            <span class="header-item task-content-header">Tarefa</span>
+            <span class="header-item status-header">Status</span>
+            <span class="header-item actions-header">Ações</span>
         </div>
-
-        <div class="status-column">
-            <h2>⏳ Em Andamento</h2>
-            <div class="tasks-container">
-                <% tasks.filter(t => t.status === 'andamento').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>" data-status="andamento">
-                        <span class="task-content"><%= task.content %></span>
-                        <div class="task-status"><%= task.status %></div>
-                        <form action="/delete-task" method="POST" class="delete-form">
-                            <input type="hidden" name="task" value="<%= task.content %>">
-                            <button type="submit" class="delete-btn">×</button>
-                        </form>
-                    </div>
-                <% }); %>
-            </div>
-        </div>
-
-        <div class="status-column">
-            <h2>✅ Concluído</h2>
-            <div class="tasks-container">
-                <% tasks.filter(t => t.status === 'concluido').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>" data-status="concluido">
-                        <span class="task-content"><%= task.content %></span>
-                        <div class="task-status"><%= task.status %></div>
-                        <form action="/delete-task" method="POST" class="delete-form">
-                            <input type="hidden" name="task" value="<%= task.content %>">
-                            <button type="submit" class="delete-btn">×</button>
-                        </form>
-                    </div>
-                <% }); %>
-            </div>
+        
+        <div class="task-list">
+            <% tasks.forEach(task => { %>
+                <div class="task-item" data-task-id="<%= task.id %>">
+                    <span class="task-content"><%= task.content %></span>
+                    <span class="task-status"><%= task.status %></span>
+                    <form action="/delete-task" method="POST" class="delete-form">
+                        <input type="hidden" name="task" value="<%= task.content %>">
+                        <button type="submit" class="delete-btn">× Excluir</button>
+                    </form>
+                </div>
+            <% }); %>
         </div>
     </div>
 
     <script>
         const socket = io();
-        
+
         // Atualização de status em tempo real
         socket.on('task-status-updated', (data) => {
-            const taskCard = document.querySelector(`[data-task-id="${data.taskId}"]`);
-            if(taskCard) {
-                // Atualiza o status exibido
-                const statusElement = taskCard.querySelector('.task-status');
+            const taskItem = document.querySelector(`[data-task-id="${data.taskId}"]`);
+            if(taskItem) {
+                const statusElement = taskItem.querySelector('.task-status');
                 if(statusElement) {
                     statusElement.textContent = data.newStatus;
-                    taskCard.dataset.status = data.newStatus;
-                }
-                
-                // Move para a coluna correta
-                const newColumn = document.querySelector(
-                    `.status-column h2:contains('${getStatusEmoji(data.newStatus)}')`
-                )?.closest('.status-column');
-                
-                if(newColumn) {
-                    const targetContainer = newColumn.querySelector('.tasks-container');
-                    const existingCard = targetContainer.querySelector(`[data-task-id="${data.taskId}"]`);
-                    
-                    if(!existingCard) {
-                        taskCard.classList.add('task-card-updating');
-                        targetContainer.prepend(taskCard);
-                        setTimeout(() => {
-                            taskCard.classList.remove('task-card-updating');
-                        }, 400);
-                    }
+                    statusElement.className = `task-status status-${data.newStatus}`;
                 }
             }
         });
 
         // Nova tarefa em tempo real
         socket.on('new-task', (task) => {
-            const column = document.querySelector('.status-column h2:contains("📌")')
-                          .closest('.status-column').querySelector('.tasks-container');
-            
-            const newCard = document.createElement('div');
-            newCard.className = 'task-card new-task';
-            newCard.dataset.taskId = task.id;
-            newCard.dataset.status = task.status;
-            newCard.innerHTML = `
+            const taskList = document.querySelector('.task-list');
+            const newItem = document.createElement('div');
+            newItem.className = 'task-item';
+            newItem.dataset.taskId = task.id;
+            newItem.innerHTML = `
                 <span class="task-content">${task.content}</span>
-                <div class="task-status">${task.status}</div>
+                <span class="task-status status-${task.status}">${task.status}</span>
                 <form action="/delete-task" method="POST" class="delete-form">
                     <input type="hidden" name="task" value="${task.content}">
-                    <button type="submit" class="delete-btn">×</button>
+                    <button type="submit" class="delete-btn">× Excluir</button>
                 </form>
             `;
-            column.prepend(newCard);
+            taskList.prepend(newItem);
         });
 
         // Exclusão de tarefa
         socket.on('task-deleted', (task) => {
-            const cards = document.querySelectorAll('.task-card');
-            cards.forEach(card => {
-                if(card.textContent.includes(task.content)) {
-                    card.remove();
+            const items = document.querySelectorAll('.task-item');
+            items.forEach(item => {
+                if(item.textContent.includes(task.content)) {
+                    item.remove();
                 }
             });
         });
@@ -146,16 +96,6 @@
                 notification.className = 'notification-hidden';
             }, 3000);
         });
-
-        // Função auxiliar para obter emoji do status
-        function getStatusEmoji(status) {
-            const emojis = {
-                novo: '📌',
-                andamento: '⏳',
-                concluido: '✅'
-            };
-            return emojis[status] || '';
-        }
     </script>
 </body>
 </html>
