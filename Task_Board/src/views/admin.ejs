@@ -20,12 +20,14 @@
         <button type="submit" class="submit-button">✅ Adicionar Tarefa</button>
     </form>
 
+    <div id="notification" class="notification-hidden"></div>
+
     <div class="status-board">
         <div class="status-column">
             <h2>📌 Novo</h2>
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'novo').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>">
+                    <div class="task-card" data-task-id="<%= task.id %>" data-status="novo">
                         <span class="task-content"><%= task.content %></span>
                         <div class="task-status"><%= task.status %></div>
                         <form action="/delete-task" method="POST" class="delete-form">
@@ -41,7 +43,7 @@
             <h2>⏳ Em Andamento</h2>
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'andamento').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>">
+                    <div class="task-card" data-task-id="<%= task.id %>" data-status="andamento">
                         <span class="task-content"><%= task.content %></span>
                         <div class="task-status"><%= task.status %></div>
                         <form action="/delete-task" method="POST" class="delete-form">
@@ -57,7 +59,7 @@
             <h2>✅ Concluído</h2>
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'concluido').forEach(task => { %>
-                    <div class="task-card" data-task-id="<%= task.id %>">
+                    <div class="task-card" data-task-id="<%= task.id %>" data-status="concluido">
                         <span class="task-content"><%= task.content %></span>
                         <div class="task-status"><%= task.status %></div>
                         <form action="/delete-task" method="POST" class="delete-form">
@@ -73,14 +75,46 @@
     <script>
         const socket = io();
         
-        // Notificação de nova tarefa
+        // Atualização de status em tempo real
+        socket.on('task-status-updated', (data) => {
+            const taskCard = document.querySelector(`[data-task-id="${data.taskId}"]`);
+            if(taskCard) {
+                // Atualiza o status exibido
+                const statusElement = taskCard.querySelector('.task-status');
+                if(statusElement) {
+                    statusElement.textContent = data.newStatus;
+                    taskCard.dataset.status = data.newStatus;
+                }
+                
+                // Move para a coluna correta
+                const newColumn = document.querySelector(
+                    `.status-column h2:contains('${getStatusEmoji(data.newStatus)}')`
+                )?.closest('.status-column');
+                
+                if(newColumn) {
+                    const targetContainer = newColumn.querySelector('.tasks-container');
+                    const existingCard = targetContainer.querySelector(`[data-task-id="${data.taskId}"]`);
+                    
+                    if(!existingCard) {
+                        taskCard.classList.add('task-card-updating');
+                        targetContainer.prepend(taskCard);
+                        setTimeout(() => {
+                            taskCard.classList.remove('task-card-updating');
+                        }, 400);
+                    }
+                }
+            }
+        });
+
+        // Nova tarefa em tempo real
         socket.on('new-task', (task) => {
-            const container = document.querySelector(`.status-column h2:contains('📌 Novo')`)
+            const column = document.querySelector('.status-column h2:contains("📌")')
                           .closest('.status-column').querySelector('.tasks-container');
             
             const newCard = document.createElement('div');
-            newCard.className = 'task-card';
+            newCard.className = 'task-card new-task';
             newCard.dataset.taskId = task.id;
+            newCard.dataset.status = task.status;
             newCard.innerHTML = `
                 <span class="task-content">${task.content}</span>
                 <div class="task-status">${task.status}</div>
@@ -89,31 +123,38 @@
                     <button type="submit" class="delete-btn">×</button>
                 </form>
             `;
-            container.prepend(newCard);
+            column.prepend(newCard);
         });
 
-        // Atualização de status
-        socket.on('task-status-updated', (data) => {
-            const taskCard = document.querySelector(`[data-task-id="${data.taskId}"]`);
-            if(taskCard) {
-                const statusElement = taskCard.querySelector('.task-status');
-                statusElement.textContent = data.newStatus;
-                
-                // Move para a coluna correta
-                const targetColumn = document.querySelector(
-                    `.status-column h2:contains('${getStatusEmoji(data.newStatus)}')`
-                ).closest('.status-column').querySelector('.tasks-container');
-                
-                targetColumn.prepend(taskCard);
-            }
+        // Exclusão de tarefa
+        socket.on('task-deleted', (task) => {
+            const cards = document.querySelectorAll('.task-card');
+            cards.forEach(card => {
+                if(card.textContent.includes(task.content)) {
+                    card.remove();
+                }
+            });
         });
 
+        // Notificações
+        socket.on('notification', (data) => {
+            const notification = document.getElementById('notification');
+            notification.textContent = data.message;
+            notification.className = `notification-${data.type}`;
+            
+            setTimeout(() => {
+                notification.className = 'notification-hidden';
+            }, 3000);
+        });
+
+        // Função auxiliar para obter emoji do status
         function getStatusEmoji(status) {
-            return {
-                'novo': '📌',
-                'andamento': '⏳',
-                'concluido': '✅'
-            }[status] || '';
+            const emojis = {
+                novo: '📌',
+                andamento: '⏳',
+                concluido: '✅'
+            };
+            return emojis[status] || '';
         }
     </script>
 </body>
