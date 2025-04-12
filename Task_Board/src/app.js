@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-// Configuração do banco de dados
+// Configuração do Banco de Dados
 const db = new sqlite3.Database('./database.db', (err) => {
     if (err) {
         console.error('Erro ao conectar ao banco de dados:', err.message);
@@ -53,13 +53,14 @@ const io = new Server(server);
 
 const port = 3000;
 
+// Configuração do Express
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static('public'));
 
-// Rotas Admin
+// Rotas
 app.get('/admin', async (req, res) => {
     try {
         const tasks = await dbAll(
@@ -91,7 +92,10 @@ app.post('/submit-task', async (req, res) => {
         );
 
         if (existingTask) {
-            io.emit('duplicate-task');
+            io.emit('notification', {
+                type: 'error',
+                message: 'Tarefa já existe!'
+            });
             return res.redirect('/admin?error=Tarefa já existe!');
         }
 
@@ -109,14 +113,17 @@ app.post('/submit-task', async (req, res) => {
         io.emit('new-task', newTaskData);
         io.emit('notification', {
             type: 'success',
-            message: 'Nova tarefa cadastrada com sucesso!'
+            message: 'Tarefa adicionada com sucesso!'
         });
 
         res.redirect('/admin');
 
     } catch (err) {
         console.error('Erro no processamento da tarefa:', err.message);
-        io.emit('database-error', { message: 'Erro ao processar a tarefa' });
+        io.emit('notification', {
+            type: 'error',
+            message: 'Erro ao processar tarefa'
+        });
         res.status(500).redirect('/admin?error=Erro ao processar a tarefa');
     }
 });
@@ -131,7 +138,10 @@ app.post('/delete-task', async (req, res) => {
         );
 
         if (!taskToDelete) {
-            io.emit('task-not-found', { message: 'Tarefa não encontrada' });
+            io.emit('notification', {
+                type: 'error',
+                message: 'Tarefa não encontrada'
+            });
             return res.status(404).redirect('/admin?error=Tarefa não encontrada');
         }
 
@@ -140,11 +150,7 @@ app.post('/delete-task', async (req, res) => {
             [taskContent]
         );
 
-        io.emit('task-deleted', {
-            id: taskToDelete.id,
-            content: taskContent
-        });
-
+        io.emit('task-deleted', taskToDelete);
         io.emit('notification', {
             type: 'warning',
             message: 'Tarefa removida com sucesso!'
@@ -154,12 +160,14 @@ app.post('/delete-task', async (req, res) => {
 
     } catch (err) {
         console.error('Erro ao deletar tarefa:', err.message);
-        io.emit('database-error', { message: 'Erro ao excluir tarefa' });
+        io.emit('notification', {
+            type: 'error',
+            message: 'Erro ao excluir tarefa'
+        });
         res.status(500).redirect('/admin?error=Erro ao excluir tarefa');
     }
 });
 
-// Rota User
 app.get('/user', async (req, res) => {
     try {
         const tasks = await dbAll(
@@ -180,7 +188,6 @@ app.get('/user', async (req, res) => {
     }
 });
 
-// Atualização de status
 app.post('/update-task-status', async (req, res) => {
     const { taskId, newStatus } = req.body;
 
@@ -201,7 +208,8 @@ app.post('/update-task-status', async (req, res) => {
 
         io.emit('task-status-updated', {
             taskId: parseInt(taskId),
-            newStatus: newStatus
+            newStatus: newStatus,
+            content: updatedTask.content
         });
 
         io.emit('notification', {
@@ -213,36 +221,37 @@ app.post('/update-task-status', async (req, res) => {
 
     } catch (err) {
         console.error('Erro ao atualizar status:', err.message);
+        io.emit('notification', {
+            type: 'error',
+            message: 'Erro ao atualizar status'
+        });
         res.status(500).json({ success: false, error: err.message });
     }
 });
 
 // Socket.IO
 io.on('connection', async (socket) => {
-    console.log('Um usuário conectou:', socket.id);
+    console.log('Usuário conectado:', socket.id);
 
     try {
         const tasks = await dbAll(
             'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
         );
         socket.emit('initial-tasks', tasks);
-
     } catch (err) {
         console.error('Erro ao enviar tarefas iniciais:', err.message);
         socket.emit('database-error', { message: 'Erro ao carregar tarefas' });
     }
 
     socket.on('disconnect', () => {
-        console.log('Um usuário desconectou:', socket.id);
+        console.log('Usuário desconectado:', socket.id);
     });
 });
 
-// Inicialização do servidor
-if (require.main === module) {
-    server.listen(port, () => {
-        console.log(`Servidor rodando em http://localhost:${port}`);
-    });
-}
+// Inicialização do Servidor
+server.listen(port, () => {
+    console.log(`Servidor rodando em http://localhost:${port}`);
+});
 
 module.exports = {
     app,
