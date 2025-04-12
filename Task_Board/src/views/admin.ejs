@@ -1,19 +1,13 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tela Administrativa</title>
     <link href="/css/admin.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/admin.js"></script>
-
 </head>
-
 <body>
     <header>
         <h1>📌 Tela Administrativa</h1>
@@ -26,27 +20,101 @@
         <button type="submit" class="submit-button">✅ Adicionar Tarefa</button>
     </form>
 
-    <div class="kanban-board">
-        <div class="kanban-column" id="new-column">
+    <div class="status-board">
+        <div class="status-column">
             <h2>📌 Novo</h2>
-            <% if (typeof tasks !=='undefined' && tasks.length> 0) { %>
-                <% tasks.forEach(task=> { %>
-                    <div class="task-card">
-                        <span class="task-content">
-                            <%= task %>
-                        </span>
-                        <button class="delete-btn" onclick="deleteTask('<%= task %>')">×</button>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'novo').forEach(task => { %>
+                    <div class="task-card" data-task-id="<%= task.id %>">
+                        <span class="task-content"><%= task.content %></span>
+                        <div class="task-status"><%= task.status %></div>
+                        <form action="/delete-task" method="POST" class="delete-form">
+                            <input type="hidden" name="task" value="<%= task.content %>">
+                            <button type="submit" class="delete-btn">×</button>
+                        </form>
                     </div>
-                    <% }); %>
-                        <% } %>
+                <% }); %>
+            </div>
         </div>
-        <div class="kanban-column" id="in-progress-column">
+
+        <div class="status-column">
             <h2>⏳ Em Andamento</h2>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'andamento').forEach(task => { %>
+                    <div class="task-card" data-task-id="<%= task.id %>">
+                        <span class="task-content"><%= task.content %></span>
+                        <div class="task-status"><%= task.status %></div>
+                        <form action="/delete-task" method="POST" class="delete-form">
+                            <input type="hidden" name="task" value="<%= task.content %>">
+                            <button type="submit" class="delete-btn">×</button>
+                        </form>
+                    </div>
+                <% }); %>
+            </div>
         </div>
-        <div class="kanban-column" id="done-column">
+
+        <div class="status-column">
             <h2>✅ Concluído</h2>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'concluido').forEach(task => { %>
+                    <div class="task-card" data-task-id="<%= task.id %>">
+                        <span class="task-content"><%= task.content %></span>
+                        <div class="task-status"><%= task.status %></div>
+                        <form action="/delete-task" method="POST" class="delete-form">
+                            <input type="hidden" name="task" value="<%= task.content %>">
+                            <button type="submit" class="delete-btn">×</button>
+                        </form>
+                    </div>
+                <% }); %>
+            </div>
         </div>
     </div>
-</body>
 
+    <script>
+        const socket = io();
+        
+        // Notificação de nova tarefa
+        socket.on('new-task', (task) => {
+            const container = document.querySelector(`.status-column h2:contains('📌 Novo')`)
+                          .closest('.status-column').querySelector('.tasks-container');
+            
+            const newCard = document.createElement('div');
+            newCard.className = 'task-card';
+            newCard.dataset.taskId = task.id;
+            newCard.innerHTML = `
+                <span class="task-content">${task.content}</span>
+                <div class="task-status">${task.status}</div>
+                <form action="/delete-task" method="POST" class="delete-form">
+                    <input type="hidden" name="task" value="${task.content}">
+                    <button type="submit" class="delete-btn">×</button>
+                </form>
+            `;
+            container.prepend(newCard);
+        });
+
+        // Atualização de status
+        socket.on('task-status-updated', (data) => {
+            const taskCard = document.querySelector(`[data-task-id="${data.taskId}"]`);
+            if(taskCard) {
+                const statusElement = taskCard.querySelector('.task-status');
+                statusElement.textContent = data.newStatus;
+                
+                // Move para a coluna correta
+                const targetColumn = document.querySelector(
+                    `.status-column h2:contains('${getStatusEmoji(data.newStatus)}')`
+                ).closest('.status-column').querySelector('.tasks-container');
+                
+                targetColumn.prepend(taskCard);
+            }
+        });
+
+        function getStatusEmoji(status) {
+            return {
+                'novo': '📌',
+                'andamento': '⏳',
+                'concluido': '✅'
+            }[status] || '';
+        }
+    </script>
+</body>
 </html>
