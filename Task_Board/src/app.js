@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-// config do banco de dados
+// Configuração do banco de dados
 const db = new sqlite3.Database('./database.db', (err) => {
     if (err) {
         console.error('Erro ao conectar ao banco de dados:', err.message);
@@ -13,12 +13,13 @@ const db = new sqlite3.Database('./database.db', (err) => {
         db.run(`CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
+            status TEXT DEFAULT 'novo',
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
     }
 });
 
-
+// Funções auxiliares do banco
 const dbRun = (sql, params = []) => {
     return new Promise((resolve, reject) => {
         db.run(sql, params, function(err) {
@@ -58,26 +59,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static('public'));
 
-
+// Rotas Admin
 app.get('/admin', async (req, res) => {
     try {
-        // await q espera a promise ser resolvida antes de continuar
         const tasks = await dbAll(
-            'SELECT content FROM tasks ORDER BY timestamp DESC'
+            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
         );
 
         res.render('admin', {
-            tasks: tasks.map(t => t.content),
+            tasks: tasks,
             error: req.query.error
         });
 
     } catch (err) {
         console.error('Erro ao buscar tarefas:', err.message);
-        
-        io.emit('database-error', {
-            message: 'Erro ao carregar tarefas'
-        });
-
+        io.emit('database-error', { message: 'Erro ao carregar tarefas' });
         res.status(500).render('admin', {
             tasks: [],
             error: 'Erro ao carregar tarefas'
@@ -89,7 +85,6 @@ app.post('/submit-task', async (req, res) => {
     const newTask = req.body.task.trim();
 
     try {
-        // verifica se tarefa já existe
         const existingTask = await dbGet(
             'SELECT content FROM tasks WHERE content = ?', 
             [newTask]
@@ -97,18 +92,23 @@ app.post('/submit-task', async (req, res) => {
 
         if (existingTask) {
             io.emit('duplicate-task');
-            return res.redirect('/admin?error=' + encodeURIComponent('Tarefa já existe!'));
+            return res.redirect('/admin?error=Tarefa já existe!');
         }
 
-        // insere nova tarefa no banco
         const result = await dbRun(
             'INSERT INTO tasks (content) VALUES (?)', 
             [newTask]
         );
 
-        // notificação de sucesso via Socket.IO
-        io.emit('new-task', {
-            task: newTask,
+        const newTaskData = {
+            id: result.lastID,
+            content: newTask,
+            status: 'novo'
+        };
+
+        io.emit('new-task', newTaskData);
+        io.emit('notification', {
+            type: 'success',
             message: 'Nova tarefa cadastrada com sucesso!'
         });
 
@@ -116,12 +116,8 @@ app.post('/submit-task', async (req, res) => {
 
     } catch (err) {
         console.error('Erro no processamento da tarefa:', err.message);
-        
-        io.emit('database-error', {
-            message: 'Erro ao processar a tarefa'
-        });
-
-        res.status(500).redirect('/admin?error=' + encodeURIComponent('Erro ao processar a tarefa'));
+        io.emit('database-error', { message: 'Erro ao processar a tarefa' });
+        res.status(500).redirect('/admin?error=Erro ao processar a tarefa');
     }
 });
 
@@ -129,23 +125,28 @@ app.post('/delete-task', async (req, res) => {
     const taskContent = req.body.task;
 
     try {
-        // executa a deleção e espera pelo resultado
-        const result = await dbRun(
+        const taskToDelete = await dbGet(
+            'SELECT id, content FROM tasks WHERE content = ?',
+            [taskContent]
+        );
+
+        if (!taskToDelete) {
+            io.emit('task-not-found', { message: 'Tarefa não encontrada' });
+            return res.status(404).redirect('/admin?error=Tarefa não encontrada');
+        }
+
+        await dbRun(
             'DELETE FROM tasks WHERE content = ?',
             [taskContent]
         );
 
-        // verifica se realmente deletou algo
-        if (result.changes === 0) {
-            io.emit('task-not-found', {
-                message: 'Tarefa não encontrada para exclusão'
-            });
-            return res.status(404).redirect('/admin?error=' + encodeURIComponent('Tarefa não encontrada'));
-        }
-
-        // notificação de sucesso
         io.emit('task-deleted', {
-            task: taskContent,
+            id: taskToDelete.id,
+            content: taskContent
+        });
+
+        io.emit('notification', {
+            type: 'warning',
             message: 'Tarefa removida com sucesso!'
         });
 
@@ -153,32 +154,25 @@ app.post('/delete-task', async (req, res) => {
 
     } catch (err) {
         console.error('Erro ao deletar tarefa:', err.message);
-        
-        io.emit('database-error', {
-            message: 'Erro ao excluir tarefa'
-        });
-
-        res.status(500).redirect('/admin?error=' + encodeURIComponent('Erro ao excluir tarefa'));
+        io.emit('database-error', { message: 'Erro ao excluir tarefa' });
+        res.status(500).redirect('/admin?error=Erro ao excluir tarefa');
     }
 });
 
+// Rota User
 app.get('/user', async (req, res) => {
     try {
         const tasks = await dbAll(
-            'SELECT content FROM tasks ORDER BY timestamp DESC'
+            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
         );
 
         res.render('user', { 
-            tasks: tasks.map(t => t.content) 
+            tasks: tasks
         });
 
     } catch (err) {
         console.error('Erro ao buscar tarefas:', err.message);
-        
-        io.emit('database-error', {
-            message: 'Erro ao carregar tarefas'
-        });
-
+        io.emit('database-error', { message: 'Erro ao carregar tarefas' });
         res.status(500).render('user', { 
             tasks: [],
             error: 'Erro ao carregar tarefas'
@@ -186,21 +180,56 @@ app.get('/user', async (req, res) => {
     }
 });
 
+// Atualização de status
+app.post('/update-task-status', async (req, res) => {
+    const { taskId, newStatus } = req.body;
+
+    try {
+        const result = await dbRun(
+            'UPDATE tasks SET status = ? WHERE id = ?',
+            [newStatus, taskId]
+        );
+
+        if (result.changes === 0) {
+            return res.status(404).json({ success: false, error: 'Tarefa não encontrada' });
+        }
+
+        const updatedTask = await dbGet(
+            'SELECT id, content, status FROM tasks WHERE id = ?',
+            [taskId]
+        );
+
+        io.emit('task-status-updated', {
+            taskId: parseInt(taskId),
+            newStatus: newStatus
+        });
+
+        io.emit('notification', {
+            type: 'info',
+            message: `Status atualizado: "${updatedTask.content}" para ${newStatus}`
+        });
+
+        res.status(200).json({ success: true });
+
+    } catch (err) {
+        console.error('Erro ao atualizar status:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Socket.IO
 io.on('connection', async (socket) => {
     console.log('Um usuário conectou:', socket.id);
 
     try {
-        // envia tarefas iniciais ao conectar
         const tasks = await dbAll(
-            'SELECT content FROM tasks ORDER BY timestamp DESC'
+            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
         );
-        socket.emit('initial-tasks', tasks.map(t => t.content));
+        socket.emit('initial-tasks', tasks);
 
     } catch (err) {
         console.error('Erro ao enviar tarefas iniciais:', err.message);
-        socket.emit('database-error', {
-            message: 'Erro ao carregar tarefas iniciais'
-        });
+        socket.emit('database-error', { message: 'Erro ao carregar tarefas' });
     }
 
     socket.on('disconnect', () => {
@@ -208,6 +237,7 @@ io.on('connection', async (socket) => {
     });
 });
 
+// Inicialização do servidor
 if (require.main === module) {
     server.listen(port, () => {
         console.log(`Servidor rodando em http://localhost:${port}`);
