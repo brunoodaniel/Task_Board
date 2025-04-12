@@ -1,40 +1,149 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quadro de Tarefas</title>
     <link href="/css/user.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/user.js"></script>
-
 </head>
-
 <body>
     <header>
         <h1>Quadro de Tarefas</h1>
     </header>
 
+    <div id="notification" class="notification-hidden"></div>
+
     <div class="kanban-board">
-        <div class="kanban-column" id="new-column">
+        <div class="kanban-column" id="novo">
             <h2>📌 Novo</h2>
-            <% tasks.forEach(task=> { %>
-                <div class="task-card">
-                    <%= task %>
-                </div>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'novo').forEach(task => { %>
+                    <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="novo">
+                        <%= task.content %>
+                    </div>
                 <% }); %>
+            </div>
         </div>
-        <div class="kanban-column" id="in-progress-column">
+
+        <div class="kanban-column" id="andamento">
             <h2>⏳ Em Andamento</h2>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'andamento').forEach(task => { %>
+                    <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="andamento">
+                        <%= task.content %>
+                    </div>
+                <% }); %>
+            </div>
         </div>
-        <div class="kanban-column" id="done-column">
+
+        <div class="kanban-column" id="concluido">
             <h2>✅ Concluído</h2>
+            <div class="tasks-container">
+                <% tasks.filter(t => t.status === 'concluido').forEach(task => { %>
+                    <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="concluido">
+                        <%= task.content %>
+                    </div>
+                <% }); %>
+            </div>
         </div>
     </div>
-</body>
 
+    <script>
+        const socket = io();
+        let draggedItem = null;
+
+        // Drag and Drop
+        document.addEventListener('dragstart', e => {
+            if(e.target.classList.contains('task-card')) {
+                draggedItem = e.target;
+                setTimeout(() => e.target.classList.add('dragging'), 0);
+            }
+        });
+
+        document.addEventListener('dragend', e => {
+            if(e.target.classList.contains('task-card')) {
+                e.target.classList.remove('dragging');
+                draggedItem = null;
+            }
+        });
+
+        document.addEventListener('dragover', e => {
+            e.preventDefault();
+            const column = e.target.closest('.kanban-column');
+            if(column && draggedItem) {
+                const afterElement = getDragAfterElement(column, e.clientY);
+                const container = column.querySelector('.tasks-container');
+                
+                if(afterElement) {
+                    container.insertBefore(draggedItem, afterElement);
+                } else {
+                    container.appendChild(draggedItem);
+                }
+
+                // Atualiza status
+                const newStatus = column.id;
+                const taskId = draggedItem.dataset.taskId;
+                
+                fetch('/update-task-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ taskId, newStatus })
+                });
+            }
+        });
+
+        function getDragAfterElement(container, y) {
+            const tasks = [...container.querySelectorAll('.task-card:not(.dragging)')];
+            return tasks.reduce((closest, task) => {
+                const box = task.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                return offset < 0 && offset > closest.offset ? 
+                    { offset, element: task } : closest;
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        // Atualizações em tempo real
+        socket.on('new-task', task => {
+            const column = document.getElementById(task.status);
+            if(column) {
+                const container = column.querySelector('.tasks-container');
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                card.draggable = true;
+                card.dataset.taskId = task.id;
+                card.dataset.status = task.status;
+                card.textContent = task.content;
+                container.prepend(card);
+            }
+        });
+
+        socket.on('task-status-updated', data => {
+            const card = document.querySelector(`[data-task-id="${data.taskId}"]`);
+            if(card) {
+                const newColumn = document.getElementById(data.newStatus);
+                if(newColumn) {
+                    card.dataset.status = data.newStatus;
+                    newColumn.querySelector('.tasks-container').prepend(card);
+                }
+            }
+        });
+
+        socket.on('task-deleted', task => {
+            const card = document.querySelector(`[data-task-id="${task.id}"]`);
+            if(card) card.remove();
+        });
+
+        socket.on('notification', data => {
+            const notification = document.getElementById('notification');
+            notification.textContent = data.message;
+            notification.className = `notification-${data.type}`;
+            
+            setTimeout(() => {
+                notification.className = 'notification-hidden';
+            }, 3000);
+        });
+    </script>
+</body>
 </html>
