@@ -9,11 +9,11 @@
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+    <div id="notification" class="notification-hidden"></div>
+    
     <header>
         <h1>Quadro de Tarefas</h1>
     </header>
-
-    <div id="notification" class="notification-hidden"></div>
 
     <div class="kanban-board">
         <div class="kanban-column" id="novo">
@@ -21,7 +21,12 @@
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'novo').forEach(task => { %>
                     <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="novo">
-                        <%= task.content %>
+                        <div class="task-content"><%= task.content %></div>
+                        <% if (task.due_date) { %>
+                            <div class="task-due" data-due-date="<%= new Date(task.due_date).toISOString() %>">
+                                📅 <%= new Date(task.due_date).toLocaleString('pt-BR') %>
+                            </div>
+                        <% } %>
                     </div>
                 <% }); %>
             </div>
@@ -32,7 +37,12 @@
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'andamento').forEach(task => { %>
                     <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="andamento">
-                        <%= task.content %>
+                        <div class="task-content"><%= task.content %></div>
+                        <% if (task.due_date) { %>
+                            <div class="task-due" data-due-date="<%= new Date(task.due_date).toISOString() %>">
+                                📅 <%= new Date(task.due_date).toLocaleString('pt-BR') %>
+                            </div>
+                        <% } %>
                     </div>
                 <% }); %>
             </div>
@@ -43,7 +53,12 @@
             <div class="tasks-container">
                 <% tasks.filter(t => t.status === 'concluido').forEach(task => { %>
                     <div class="task-card" draggable="true" data-task-id="<%= task.id %>" data-status="concluido">
-                        <%= task.content %>
+                        <div class="task-content"><%= task.content %></div>
+                        <% if (task.due_date) { %>
+                            <div class="task-due" data-due-date="<%= new Date(task.due_date).toISOString() %>">
+                                📅 <%= new Date(task.due_date).toLocaleString('pt-BR') %>
+                            </div>
+                        <% } %>
                     </div>
                 <% }); %>
             </div>
@@ -53,6 +68,54 @@
     <script>
         const socket = io();
         let draggedItem = null;
+
+        // Função para mostrar notificação
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification-${type}`;
+            
+            setTimeout(() => {
+                notification.className = 'notification-hidden';
+            }, 5000);
+        }
+
+        // Verificar prazos das tarefas
+        function checkDueDates() {
+            const now = new Date();
+            const warningThreshold = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 horas
+            
+            document.querySelectorAll('.task-card').forEach(taskCard => {
+                // Ignora tarefas concluídas
+                if (taskCard.dataset.status === 'concluido') return;
+                
+                const dueElement = taskCard.querySelector('.task-due');
+                if (!dueElement) return;
+                
+                const dueDate = new Date(dueElement.dataset.dueDate);
+                const taskContent = taskCard.querySelector('.task-content').textContent;
+                
+                // Remove classes anteriores
+                dueElement.classList.remove('warning', 'urgent');
+                
+                // Verifica se está perto do prazo (menos de 24 horas)
+                if (dueDate > now && dueDate <= warningThreshold) {
+                    dueElement.classList.add('warning');
+                    if (!taskCard.dataset.warningShown) {
+                        showNotification(`⏳ A tarefa "${taskContent}" está perto do prazo!`, 'warning');
+                        taskCard.dataset.warningShown = 'true';
+                    }
+                } 
+                // Verifica se está atrasada
+                else if (dueDate <= now) {
+                    dueElement.classList.add('urgent');
+                    if (!taskCard.dataset.urgentShown) {
+                        showNotification(`⚠️ A tarefa "${taskContent}" está atrasada!`, 'error');
+                        taskCard.dataset.urgentShown = 'true';
+                    }
+                }
+            });
+        }
 
         // Drag and Drop
         document.addEventListener('dragstart', e => {
@@ -82,7 +145,6 @@
                     container.appendChild(draggedItem);
                 }
 
-                // Atualiza status
                 const newStatus = column.id;
                 const taskId = draggedItem.dataset.taskId;
                 
@@ -114,8 +176,21 @@
                 card.draggable = true;
                 card.dataset.taskId = task.id;
                 card.dataset.status = task.status;
-                card.textContent = task.content;
+                
+                let dueDateHtml = '';
+                if (task.due_date) {
+                    const dueDate = new Date(task.due_date);
+                    dueDateHtml = `<div class="task-due" data-due-date="${dueDate.toISOString()}">
+                        📅 ${dueDate.toLocaleString('pt-BR')}
+                    </div>`;
+                }
+                
+                card.innerHTML = `
+                    <div class="task-content">${task.content}</div>
+                    ${dueDateHtml}
+                `;
                 container.prepend(card);
+                checkDueDates();
             }
         });
 
@@ -130,19 +205,14 @@
             }
         });
 
-        socket.on('task-deleted', task => {
-            const card = document.querySelector(`[data-task-id="${task.id}"]`);
-            if(card) card.remove();
+        socket.on('notification', data => {
+            showNotification(data.message, data.type);
         });
 
-        socket.on('notification', data => {
-            const notification = document.getElementById('notification');
-            notification.textContent = data.message;
-            notification.className = `notification-${data.type}`;
-            
-            setTimeout(() => {
-                notification.className = 'notification-hidden';
-            }, 3000);
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            checkDueDates();
+            setInterval(checkDueDates, 60000); // Verifica a cada minuto
         });
     </script>
 </body>

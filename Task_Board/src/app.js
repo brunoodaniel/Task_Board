@@ -14,6 +14,7 @@ const db = new sqlite3.Database('./database.db', (err) => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
             status TEXT DEFAULT 'novo',
+            due_date DATETIME,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
     }
@@ -63,27 +64,17 @@ app.use(express.static('public'));
 // Rotas
 app.get('/admin', async (req, res) => {
     try {
-        const tasks = await dbAll(
-            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
-        );
-
-        res.render('admin', {
-            tasks: tasks,
-            error: req.query.error
-        });
-
+        const tasks = await dbAll('SELECT id, content, status, due_date FROM tasks ORDER BY timestamp DESC');
+        res.render('admin', { tasks, error: req.query.error });
     } catch (err) {
-        console.error('Erro ao buscar tarefas:', err.message);
-        io.emit('database-error', { message: 'Erro ao carregar tarefas' });
-        res.status(500).render('admin', {
-            tasks: [],
-            error: 'Erro ao carregar tarefas'
-        });
+        console.error('Erro ao buscar tarefas:', err);
+        res.status(500).render('admin', { tasks: [], error: 'Erro ao carregar tarefas' });
     }
 });
 
 app.post('/submit-task', async (req, res) => {
-    const newTask = req.body.task.trim();
+    const { task, due_date } = req.body;
+    const newTask = task.trim();
 
     try {
         const existingTask = await dbGet(
@@ -100,14 +91,15 @@ app.post('/submit-task', async (req, res) => {
         }
 
         const result = await dbRun(
-            'INSERT INTO tasks (content) VALUES (?)', 
-            [newTask]
+            'INSERT INTO tasks (content, due_date) VALUES (?, ?)', 
+            [newTask, due_date || null]
         );
 
         const newTaskData = {
             id: result.lastID,
             content: newTask,
-            status: 'novo'
+            status: 'novo',
+            due_date: due_date || null
         };
 
         io.emit('new-task', newTaskData);
@@ -145,7 +137,6 @@ app.post('/delete-task', async (req, res) => {
             return res.status(404).redirect('/admin?error=Tarefa não encontrada');
         }
 
-        // Verificar se a tarefa está concluída
         if (taskToDelete.status === 'concluido') {
             io.emit('notification', {
                 type: 'error',
@@ -179,21 +170,11 @@ app.post('/delete-task', async (req, res) => {
 
 app.get('/user', async (req, res) => {
     try {
-        const tasks = await dbAll(
-            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
-        );
-
-        res.render('user', { 
-            tasks: tasks
-        });
-
+        const tasks = await dbAll('SELECT id, content, status, due_date FROM tasks ORDER BY timestamp DESC');
+        res.render('user', { tasks });
     } catch (err) {
-        console.error('Erro ao buscar tarefas:', err.message);
-        io.emit('database-error', { message: 'Erro ao carregar tarefas' });
-        res.status(500).render('user', { 
-            tasks: [],
-            error: 'Erro ao carregar tarefas'
-        });
+        console.error('Erro ao buscar tarefas:', err);
+        res.status(500).render('user', { tasks: [], error: 'Erro ao carregar tarefas' });
     }
 });
 
@@ -211,14 +192,15 @@ app.post('/update-task-status', async (req, res) => {
         }
 
         const updatedTask = await dbGet(
-            'SELECT id, content, status FROM tasks WHERE id = ?',
+            'SELECT id, content, status, due_date FROM tasks WHERE id = ?',
             [taskId]
         );
 
         io.emit('task-status-updated', {
             taskId: parseInt(taskId),
             newStatus: newStatus,
-            content: updatedTask.content
+            content: updatedTask.content,
+            due_date: updatedTask.due_date
         });
 
         io.emit('notification', {
@@ -238,13 +220,56 @@ app.post('/update-task-status', async (req, res) => {
     }
 });
 
+// Verificação periódica de prazos
+function checkDueDatesPeriodically() {
+    setInterval(async () => {
+        try {
+            const now = new Date();
+            const warningTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            
+            // Tarefas próximas do prazo (apenas não concluídas)
+            const warningTasks = await dbAll(
+                `SELECT id, content FROM tasks 
+                 WHERE due_date BETWEEN ? AND ? 
+                 AND status != 'concluido'`,
+                [now.toISOString(), warningTime.toISOString()]
+            );
+            
+            // Tarefas atrasadas (apenas não concluídas)
+            const expiredTasks = await dbAll(
+                `SELECT id, content FROM tasks 
+                 WHERE due_date < ? 
+                 AND status != 'concluido'`,
+                [now.toISOString()]
+            );
+            
+            // Enviar notificações
+            warningTasks.forEach(task => {
+                io.emit('notification', {
+                    type: 'warning',
+                    message: `⏳ A tarefa "${task.content}" está perto do prazo!`
+                });
+            });
+            
+            expiredTasks.forEach(task => {
+                io.emit('notification', {
+                    type: 'error',
+                    message: `⚠️ A tarefa "${task.content}" está atrasada!`
+                });
+            });
+            
+        } catch (err) {
+            console.error('Erro ao verificar prazos:', err);
+        }
+    }, 30 * 60 * 1000); // Verificar a cada 30 minutos
+}
 // Socket.IO
 io.on('connection', async (socket) => {
     console.log('Usuário conectado:', socket.id);
 
     try {
         const tasks = await dbAll(
-            'SELECT id, content, status FROM tasks ORDER BY timestamp DESC'
+            'SELECT id, content, status, due_date FROM tasks ORDER BY timestamp DESC'
         );
         socket.emit('initial-tasks', tasks);
     } catch (err) {
@@ -257,13 +282,9 @@ io.on('connection', async (socket) => {
     });
 });
 
-// Inicialização do Servidor
 server.listen(port, () => {
     console.log(`Servidor rodando em http://localhost:${port}`);
+    checkDueDatesPeriodically();
 });
 
-module.exports = {
-    app,
-    db, 
-    server 
-};
+module.exports = { app, db, server };

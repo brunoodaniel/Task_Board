@@ -1,4 +1,3 @@
-/* user.css atualizado */
 * {
     margin: 0;
     padding: 0;
@@ -104,6 +103,26 @@ header h1 {
     border: 1px dashed #ccc;
 }
 
+.task-content {
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.task-due {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.task-due.urgent {
+    color: #d32f2f;
+    font-weight: 600;
+}
+
+.task-due.warning {
+    color: #ff9800;
+    font-weight: 600;
+}
+
 .kanban-column.over {
     background: #f8f9ff;
     transform: scale(1.02);
@@ -140,6 +159,7 @@ header h1 {
 .notification-success { background: #4CAF50; }
 .notification-info { background: #2196F3; }
 .notification-warning { background: #ff9800; }
+.notification-error { background: #f44336; }
 .notification-hidden {
     opacity: 0;
     transform: translateY(-30px);
@@ -197,4 +217,42 @@ header h1 {
 
 .kanban-board::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+}
+
+/* Notificações */
+#notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 8px;
+    color: white;
+    z-index: 1000;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.notification-hidden {
+    opacity: 0;
+    transform: translateY(-30px);
+    pointer-events: none;
+}
+
+.notification-success { background: #4CAF50; }
+.notification-info { background: #2196F3; }
+.notification-warning { background: #ff9800; }
+.notification-error { background: #f44336; }
+
+/* Estilos para prazos */
+.task-due.warning {
+    color: #ff9800;
+    font-weight: 600;
+}
+
+.task-due.urgent {
+    color: #f44336;
+    font-weight: 600;
 }

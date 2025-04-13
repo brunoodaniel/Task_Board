@@ -16,6 +16,10 @@
     <form class="task-form" method="POST" action="/submit-task">
         <label for="task">Nova Tarefa:</label>
         <input type="text" id="task" name="task" placeholder="Digite a nova tarefa..." required>
+        
+        <label for="due_date">Data Limite:</label>
+        <input type="datetime-local" id="due_date" name="due_date">
+        
         <div id="error-message" class="error-message"></div>
         <button type="submit" class="submit-button">✅ Adicionar Tarefa</button>
     </form>
@@ -33,7 +37,17 @@
         <div class="task-list">
             <% tasks.forEach(task => { %>
                 <div class="task-item" data-task-id="<%= task.id %>">
-                    <span class="task-content"><%= task.content %></span>
+                    <div>
+                        <span class="task-content"><%= task.content %></span>
+                        <% if (task.due_date) { %>
+                            <div class="task-due 
+                                <%= task.status !== 'concluido' && new Date(task.due_date) < new Date() ? 'urgent' : '' %> 
+                                <%= task.status !== 'concluido' && new Date(task.due_date) <= new Date(new Date().getTime() + 24 * 60 * 60 * 1000) ? 'warning' : '' %>" 
+                                data-due-date="<%= new Date(task.due_date).toISOString() %>">
+                                📅 Limite: <%= new Date(task.due_date).toLocaleString('pt-BR') %>
+                            </div>
+                        <% } %>
+                    </div>
                     <span class="task-status status-<%= task.status %>"><%= task.status %></span>
                     <form action="/delete-task" method="POST" class="delete-form">
                         <input type="hidden" name="task" value="<%= task.content %>">
@@ -47,45 +61,62 @@
     <script>
         const socket = io();
 
-        // Desativa botões de exclusão para tarefas concluídas
-        document.addEventListener('DOMContentLoaded', () => {
+        // Verificar prazos e aplicar estilos
+        function checkDueDates() {
             document.querySelectorAll('.task-item').forEach(item => {
                 const statusElement = item.querySelector('.task-status');
+                const dueElement = item.querySelector('.task-due');
+                
+                // Ignora tarefas concluídas
                 if (statusElement && statusElement.textContent === 'concluido') {
-                    const deleteBtn = item.querySelector('.delete-btn');
-                    if (deleteBtn) {
-                        deleteBtn.disabled = true;
-                        deleteBtn.style.opacity = '0.5';
-                        deleteBtn.style.cursor = 'not-allowed';
-                        deleteBtn.title = 'Tarefas concluídas não podem ser excluídas';
+                    if (dueElement) {
+                        dueElement.classList.remove('warning', 'urgent');
+                    }
+                    return;
+                }
+
+                if (!dueElement) return;
+                
+                const dueDate = new Date(dueElement.dataset.dueDate);
+                const now = new Date();
+                const taskContent = item.querySelector('.task-content').textContent;
+                
+                // Remove classes anteriores
+                dueElement.classList.remove('warning', 'urgent');
+                
+                // Verifica prazos apenas para tarefas não concluídas
+                if (dueDate <= now) {
+                    dueElement.classList.add('urgent');
+                    if (!item.dataset.urgentShown) {
+                        showNotification(`⚠️ A tarefa "${taskContent}" está atrasada!`, 'error');
+                        item.dataset.urgentShown = 'true';
+                    }
+                } else if (dueDate <= new Date(now.getTime() + 24 * 60 * 60 * 1000)) {
+                    dueElement.classList.add('warning');
+                    if (!item.dataset.warningShown) {
+                        showNotification(`⏳ A tarefa "${taskContent}" está perto do prazo!`, 'warning');
+                        item.dataset.warningShown = 'true';
                     }
                 }
             });
-        });
+        }
 
-        // Adiciona confirmação antes de excluir
-        document.querySelectorAll('.delete-form').forEach(form => {
-            form.addEventListener('submit', function(e) {
-                const statusElement = this.closest('.task-item').querySelector('.task-status');
-                if (statusElement && statusElement.textContent === 'concluido') {
-                    e.preventDefault();
-                    const notification = document.getElementById('notification');
-                    notification.textContent = 'Não é possível excluir tarefas concluídas!';
-                    notification.className = 'notification-error';
-                    
-                    setTimeout(() => {
-                        notification.className = 'notification-hidden';
-                    }, 3000);
-                    return false;
-                }
-                
-                if (!confirm('Tem certeza que deseja excluir esta tarefa?')) {
-                    e.preventDefault();
-                }
-            });
-        });
+        // Mostrar notificação
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification-${type}`;
+            
+            setTimeout(() => {
+                notification.className = 'notification-hidden';
+            }, 5000);
+        }
 
-        // Atualização de status em tempo real
+        // Verificar prazos periodicamente
+        setInterval(checkDueDates, 60000);
+        document.addEventListener('DOMContentLoaded', checkDueDates);
+
+        // Eventos Socket.IO
         socket.on('task-status-updated', (data) => {
             const taskItem = document.querySelector(`[data-task-id="${data.taskId}"]`);
             if(taskItem) {
@@ -113,14 +144,25 @@
             }
         });
 
-        // Nova tarefa em tempo real
         socket.on('new-task', (task) => {
             const taskList = document.querySelector('.task-list');
             const newItem = document.createElement('div');
             newItem.className = 'task-item';
             newItem.dataset.taskId = task.id;
+            
+            let dueDateHtml = '';
+            if (task.due_date) {
+                const dueDate = new Date(task.due_date);
+                dueDateHtml = `<div class="task-due" data-due-date="${dueDate.toISOString()}">
+                    📅 Limite: ${dueDate.toLocaleString('pt-BR')}
+                </div>`;
+            }
+            
             newItem.innerHTML = `
-                <span class="task-content">${task.content}</span>
+                <div>
+                    <span class="task-content">${task.content}</span>
+                    ${dueDateHtml}
+                </div>
                 <span class="task-status status-${task.status}">${task.status}</span>
                 <form action="/delete-task" method="POST" class="delete-form">
                     <input type="hidden" name="task" value="${task.content}">
@@ -128,9 +170,9 @@
                 </form>
             `;
             taskList.prepend(newItem);
+            checkDueDates();
         });
 
-        // Exclusão de tarefa
         socket.on('task-deleted', (task) => {
             const items = document.querySelectorAll('.task-item');
             items.forEach(item => {
@@ -140,15 +182,8 @@
             });
         });
 
-        // Notificações
         socket.on('notification', (data) => {
-            const notification = document.getElementById('notification');
-            notification.textContent = data.message;
-            notification.className = `notification-${data.type}`;
-            
-            setTimeout(() => {
-                notification.className = 'notification-hidden';
-            }, 3000);
+            showNotification(data.message, data.type);
         });
     </script>
 </body>
