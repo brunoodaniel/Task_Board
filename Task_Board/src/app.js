@@ -133,7 +133,7 @@ app.post('/delete-task', async (req, res) => {
 
     try {
         const taskToDelete = await dbGet(
-            'SELECT id, content FROM tasks WHERE content = ?',
+            'SELECT id, content, status FROM tasks WHERE content = ?',
             [taskContent]
         );
 
@@ -143,6 +143,15 @@ app.post('/delete-task', async (req, res) => {
                 message: 'Tarefa não encontrada'
             });
             return res.status(404).redirect('/admin?error=Tarefa não encontrada');
+        }
+
+        // Verificar se a tarefa está concluída
+        if (taskToDelete.status === 'concluido') {
+            io.emit('notification', {
+                type: 'error',
+                message: 'Não é possível excluir tarefas concluídas!'
+            });
+            return res.status(403).redirect('/admin?error=Não é possível excluir tarefas concluídas');
         }
 
         await dbRun(

@@ -34,10 +34,10 @@
             <% tasks.forEach(task => { %>
                 <div class="task-item" data-task-id="<%= task.id %>">
                     <span class="task-content"><%= task.content %></span>
-                    <span class="task-status"><%= task.status %></span>
+                    <span class="task-status status-<%= task.status %>"><%= task.status %></span>
                     <form action="/delete-task" method="POST" class="delete-form">
                         <input type="hidden" name="task" value="<%= task.content %>">
-                        <button type="submit" class="delete-btn">× Excluir</button>
+                        <button type="submit" class="delete-btn" <%= task.status === 'concluido' ? 'disabled title="Tarefas concluídas não podem ser excluídas"' : '' %>>× Excluir</button>
                     </form>
                 </div>
             <% }); %>
@@ -47,14 +47,68 @@
     <script>
         const socket = io();
 
+        // Desativa botões de exclusão para tarefas concluídas
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.task-item').forEach(item => {
+                const statusElement = item.querySelector('.task-status');
+                if (statusElement && statusElement.textContent === 'concluido') {
+                    const deleteBtn = item.querySelector('.delete-btn');
+                    if (deleteBtn) {
+                        deleteBtn.disabled = true;
+                        deleteBtn.style.opacity = '0.5';
+                        deleteBtn.style.cursor = 'not-allowed';
+                        deleteBtn.title = 'Tarefas concluídas não podem ser excluídas';
+                    }
+                }
+            });
+        });
+
+        // Adiciona confirmação antes de excluir
+        document.querySelectorAll('.delete-form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                const statusElement = this.closest('.task-item').querySelector('.task-status');
+                if (statusElement && statusElement.textContent === 'concluido') {
+                    e.preventDefault();
+                    const notification = document.getElementById('notification');
+                    notification.textContent = 'Não é possível excluir tarefas concluídas!';
+                    notification.className = 'notification-error';
+                    
+                    setTimeout(() => {
+                        notification.className = 'notification-hidden';
+                    }, 3000);
+                    return false;
+                }
+                
+                if (!confirm('Tem certeza que deseja excluir esta tarefa?')) {
+                    e.preventDefault();
+                }
+            });
+        });
+
         // Atualização de status em tempo real
         socket.on('task-status-updated', (data) => {
             const taskItem = document.querySelector(`[data-task-id="${data.taskId}"]`);
             if(taskItem) {
                 const statusElement = taskItem.querySelector('.task-status');
+                const deleteBtn = taskItem.querySelector('.delete-btn');
+                
                 if(statusElement) {
                     statusElement.textContent = data.newStatus;
                     statusElement.className = `task-status status-${data.newStatus}`;
+                }
+                
+                if(deleteBtn) {
+                    if(data.newStatus === 'concluido') {
+                        deleteBtn.disabled = true;
+                        deleteBtn.style.opacity = '0.5';
+                        deleteBtn.style.cursor = 'not-allowed';
+                        deleteBtn.title = 'Tarefas concluídas não podem ser excluídas';
+                    } else {
+                        deleteBtn.disabled = false;
+                        deleteBtn.style.opacity = '1';
+                        deleteBtn.style.cursor = 'pointer';
+                        deleteBtn.title = '';
+                    }
                 }
             }
         });
@@ -70,7 +124,7 @@
                 <span class="task-status status-${task.status}">${task.status}</span>
                 <form action="/delete-task" method="POST" class="delete-form">
                     <input type="hidden" name="task" value="${task.content}">
-                    <button type="submit" class="delete-btn">× Excluir</button>
+                    <button type="submit" class="delete-btn" ${task.status === 'concluido' ? 'disabled title="Tarefas concluídas não podem ser excluídas"' : ''}>× Excluir</button>
                 </form>
             `;
             taskList.prepend(newItem);

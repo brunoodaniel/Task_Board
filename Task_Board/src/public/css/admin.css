@@ -266,3 +266,30 @@ header {
 .new-task {
     animation: taskEnter 0.4s ease-out;
 }
+
+
+/* Adicione estas regras ao seu arquivo admin.css existente */
+
+.delete-btn:disabled {
+    background: #f5f5f5 !important;
+    color: #999 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+}
+
+.delete-btn:disabled:hover {
+    background: #f5f5f5 !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.task-status.status-concluido {
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 700;
+}
+
+.notification-error {
+    background: #f44336;
+    color: white;
+}
