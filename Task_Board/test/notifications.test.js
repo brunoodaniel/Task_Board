@@ -115,7 +115,7 @@ describe('Testes de Notificações Socket.IO', function () {
             },
           }).catch(err => {
             if (err.response && err.response.status === 403) {
-              return; // Status 403 é esperado
+              return; 
             }
             done(err);
           });
